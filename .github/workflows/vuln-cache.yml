@@ -1,0 +1,27 @@
+name: Cache Build
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: build/
+          key: cache-${{ github.sha }}
+          restore-keys: |
+            cache-
+            
+      - name: Execute Build Script
+        run: |
+          chmod +x ./build.sh || true
+          ./build.sh
