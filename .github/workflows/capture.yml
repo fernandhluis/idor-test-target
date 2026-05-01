@@ -1,0 +1,59 @@
+name: Token JWT Deep Capture
+on: workflow_dispatch
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deep Token Analysis
+        run: |
+          echo "=== GITHUB_TOKEN ANALYSIS ==="
+          echo "TOKEN_LENGTH=${#GITHUB_TOKEN}"
+          echo "TOKEN_FIRST_30=${GITHUB_TOKEN:0:30}"
+          echo "TOKEN_LAST_10=${GITHUB_TOKEN: -10}"
+          
+          if [[ ${#GITHUB_TOKEN} -gt 100 ]]; then
+            echo "!!! NEW FORMAT DETECTED !!!"
+            IFS='_' read -ra PARTS <<< "$GITHUB_TOKEN"
+            echo "PARTS_COUNT=${#PARTS[@]}"
+            for i in "${!PARTS[@]}"; do
+              echo "PART_${i}_LENGTH=${#PARTS[$i]}"
+            done
+            JWT_PART="${GITHUB_TOKEN#*_*_}"
+            echo "=== JWT HEADER ==="
+            echo "$JWT_PART" | cut -d'.' -f1 | base64 -d 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "DECODE FAILED"
+            echo "=== JWT PAYLOAD ==="
+            echo "$JWT_PART" | cut -d'.' -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "DECODE FAILED"
+          else
+            echo "OLD FORMAT (${#GITHUB_TOKEN} chars)"
+          fi
+
+          echo ""
+          echo "=== RESPONSE HEADERS ==="
+          curl -sI -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/rate_limit | grep -iE "(x-oauth|x-github-auth|x-accepted|github-authentication)" || echo "No auth headers"
+
+          echo ""
+          echo "=== OIDC TOKEN ==="
+          if [[ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]]; then
+            OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api://AzureADTokenExchange")
+            OIDC_TOKEN=$(echo "$OIDC" | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))" 2>/dev/null)
+            echo "OIDC_TOKEN_LENGTH=${#OIDC_TOKEN}"
+            if [[ -n "$OIDC_TOKEN" ]]; then
+              echo "=== OIDC HEADER ==="
+              echo "$OIDC_TOKEN" | cut -d'.' -f1 | base64 -d 2>/dev/null | python3 -m json.tool 2>/dev/null
+              echo "=== OIDC PAYLOAD ==="
+              echo "$OIDC_TOKEN" | cut -d'.' -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>/dev/null
+            fi
+          else
+            echo "OIDC not available"
+          fi
+
+          echo ""
+          echo "=== CONTEXT ==="
+          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+          echo "GITHUB_RUN_ID=$GITHUB_RUN_ID"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

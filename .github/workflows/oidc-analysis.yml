@@ -1,0 +1,42 @@
+name: OIDC Claim Analysis
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get OIDC Token and Analyze Claims
+        run: |
+          echo "=== OIDC TOKEN CLAIM ANALYSIS ==="
+          OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api://AzureADTokenExchange")
+          TOKEN=$(echo "$OIDC" | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))" 2>/dev/null)
+          
+          echo "=== FULL PAYLOAD ==="
+          echo "$TOKEN" | cut -d'.' -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>/dev/null
+          
+          echo ""
+          echo "=== SUB CLAIM FORMAT ==="
+          SUB=$(echo "$TOKEN" | cut -d'.' -f2 | base64 -d 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('sub',''))")
+          echo "sub = $SUB"
+          
+          echo ""
+          echo "=== CUSTOM PROPERTIES IN CLAIMS ==="
+          echo "$TOKEN" | cut -d'.' -f2 | base64 -d 2>/dev/null | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for k,v in sorted(data.items()):
+    if 'custom' in k.lower() or 'property' in k.lower() or 'prop' in k.lower():
+        print(f'  CUSTOM: {k} = {v}')
+    elif k not in ('iat','exp','nbf','iss','aud','jti'):
+        print(f'  {k} = {v}')
+"
+          
+          echo ""
+          echo "=== TESTING: Is sub claim immutable format? ==="
+          if echo "$SUB" | grep -q "repo_id:"; then
+            echo "NEW FORMAT (immutable) - uses repo_id"
+          else
+            echo "OLD FORMAT (mutable) - uses repo name (recyclable!)"
+          fi

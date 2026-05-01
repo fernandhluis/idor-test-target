@@ -1,0 +1,29 @@
+name: Token Format Probe
+on: workflow_dispatch
+permissions:
+  contents: read
+  actions: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Token Analysis
+        run: |
+          echo "TOKEN_PREFIX=${GITHUB_TOKEN:0:10}" 
+          echo "TOKEN_LENGTH=${#GITHUB_TOKEN}"
+          AFTER_PREFIX=${GITHUB_TOKEN:4}
+          IFS='_' read -ra PARTS <<< "$AFTER_PREFIX"
+          echo "PARTS_COUNT=${#PARTS[@]}"
+          for i in "${!PARTS[@]}"; do
+            PART=${PARTS[$i]}
+            echo "PART_${i}_LENGTH=${#PART}"
+            if [ ${#PART} -gt 20 ]; then
+              DECODED=$(echo "$PART" | base64 -d 2>/dev/null | head -c 200 || echo "NOT_BASE64")
+              echo "PART_${i}_DECODED_SAMPLE=${DECODED:0:100}"
+            fi
+          done
+          
+          echo "---HEADERS---"
+          curl -s -I -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/rate_limit | head -20
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
